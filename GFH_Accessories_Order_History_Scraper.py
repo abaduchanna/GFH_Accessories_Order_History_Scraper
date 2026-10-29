@@ -61,16 +61,50 @@ import urllib.request
 from datetime import datetime, date, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import pandas as pd
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.edge.service import Service
-from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
 
 import tkinter as tk
+
+# ── LAZY heavy imports (opening-hang fix) ─────────────────────────────────
+# pandas / selenium / openpyxl used to import at module load and delayed the
+# first window paint by several seconds (user-reported startup hang). They
+# are only needed once a scrape/export actually starts, so they load on
+# first use via _ensure_heavy_imports().
+pd = None
+webdriver = None
+By = None
+WebDriverWait = None
+EC = None
+Service = None
+PatternFill = None
+Font = None
+Alignment = None
+Border = None
+Side = None
+get_column_letter = None
+
+
+def _ensure_heavy_imports():
+    """Loads pandas + selenium + openpyxl into module globals on first call
+    (no-op afterwards). Called at the scrape entry points."""
+    global pd, webdriver, By, WebDriverWait, EC, Service
+    global PatternFill, Font, Alignment, Border, Side, get_column_letter
+    if pd is None:
+        import pandas as _pd_mod
+        pd = _pd_mod
+    if webdriver is None:
+        from selenium import webdriver as _w
+        from selenium.webdriver.common.by import By as _By
+        from selenium.webdriver.support.ui import WebDriverWait as _W
+        from selenium.webdriver.support import expected_conditions as _EC
+        from selenium.webdriver.edge.service import Service as _S
+        webdriver, By, WebDriverWait, EC, Service = _w, _By, _W, _EC, _S
+    if get_column_letter is None:
+        from openpyxl.styles import (PatternFill as _PF, Font as _F,
+                                     Alignment as _A, Border as _B, Side as _Sd)
+        from openpyxl.utils import get_column_letter as _GCL
+        PatternFill, Font, Alignment, Border, Side = _PF, _F, _A, _B, _Sd
+        get_column_letter = _GCL
+
 from theme_manager import ThemeManager, apply_theme_to_window, get_copyright_year
 from header_manager import FixedHeaderManager
 from logo_handler import LogoHandler
@@ -881,6 +915,7 @@ def extract_order_history(driver):
 # EXCEL EXPORT (professional styling)
 # ============================================================================
 def save_to_excel(orders_data):
+    _ensure_heavy_imports()
     """Save to Excel with professional styling.
     Internal-only fields (prefixed with `_`) are stripped before export.
     The exported table uses the GFH brand palette: navy header, alternating
@@ -987,6 +1022,7 @@ def save_to_excel(orders_data):
 # MAIN SCRAPE ROUTINE
 # ============================================================================
 def run_scrape(log, ask_yes_no, ask_ok, should_stop, date_range=("all", "", ""), max_workers=8):
+    _ensure_heavy_imports()
     """Main scrape routine. `log` replaces print for status; runs on a worker thread.
 
     Parameters
