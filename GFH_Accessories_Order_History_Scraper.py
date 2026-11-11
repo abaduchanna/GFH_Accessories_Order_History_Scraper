@@ -54,6 +54,7 @@ import io
 import re
 import time
 import queue
+import shutil
 import threading
 import traceback
 import zipfile
