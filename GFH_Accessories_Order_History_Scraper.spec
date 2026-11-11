@@ -49,7 +49,6 @@ a = Analysis(
         'selenium.common',
         'selenium.common.exceptions',
         'openpyxl',
-        'pyperclip',
         'requests',
         'theme_manager',
         'logo_handler',
@@ -64,6 +63,7 @@ a = Analysis(
     excludedimports=[
         'doctest',
         'pdb',
+        'pyperclip',
         'torch',
         'torchvision',
         'torchaudio',
