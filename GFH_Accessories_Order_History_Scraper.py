@@ -18,36 +18,130 @@ The GUI exposes a date-range filter so the user can limit which orders are
 processed and exported (All / 7d / 30d / 90d / YTD / Custom).
 """
 
-# ── Auto-installer (version-aware) ─────────────────────────────────────────
+# ── Bootstrap splash with LIVE loading bar ─────────────────────────────────
+# Same pattern as GFH Inventory Audit: if a startup package is missing, show
+# a small tk splash whose bar fills as each package installs, so the user
+# sees live progress instead of a silent console window. No-op when
+# everything is present (always the case inside a frozen EXE — deps are
+# bundled by PyInstaller, and `exe -m pip install` would re-launch the whole
+# app instead of installing, recursively spawning more EXE processes).
 import subprocess
 import sys, subprocess
-def _pkg_version(dist):
-    try:
-        import importlib.metadata as _md
-        return _md.version(dist)
-    except Exception:
-        return None
-def _ensure(pip_name, imp_name):
-    # In a frozen PyInstaller --onefile EXE, sys.executable IS the EXE itself.
-    # Running `exe -m pip install ...` would re-launch the whole app instead of
-    # installing, so if any bundled dependency fails to import at startup it
-    # recursively spawns more EXE processes -> flooding Task Manager. When
-    # frozen, dependencies are already bundled by PyInstaller, so never attempt
-    # a pip install / subprocess spawn at all.
+def _bootstrap_packages(packages, app_title):
     if getattr(sys, "frozen", False):
-        return
-    if _pkg_version(pip_name) is not None:
-        return
-    try:
-        __import__(imp_name.split(".")[0])
-    except ImportError:
+        return True
+    missing = []
+    for _imp, _pip in packages:
         try:
-            print(f"Installing {pip_name}...")
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", pip_name, "-q"])
-        except Exception as e:
-            print(f"  [WARN] could not install {pip_name}: {e}")
-for _p, _i in [("selenium", "selenium"), ("pandas", "pandas"), ("openpyxl", "openpyxl"), ("pdfplumber", "pdfplumber"), ("requests", "requests"), ("Pillow", "PIL")]:
-    _ensure(_p, _i)
+            __import__(_imp)
+        except Exception:
+            missing.append(_pip)
+    if not missing:
+        return True
+
+    try:
+        import tkinter as _tk
+        from tkinter import ttk as _ttk
+        _splash = _tk.Tk()
+        _splash.title(app_title + " — Installing packages…")
+        _splash.geometry("560x150")
+        _splash.resizable(False, False)
+        try:
+            _splash.configure(bg="#090d26")
+        except Exception:
+            pass
+        _splash_lbl = _tk.Label(
+            _splash,
+            text=f"Installing: {missing[0]} (1/{len(missing)})\n"
+                 "Please wait — this runs once only…",
+            font=("Segoe UI", 11), pady=12, bg="#090d26", fg="#FFFFFF",
+        )
+        _splash_lbl.pack()
+        _splash_bar = _ttk.Progressbar(
+            _splash, orient="horizontal", length=500,
+            mode="determinate", maximum=100, value=0,
+        )
+        _splash_bar.pack(pady=(0, 12))
+        _splash.update()
+    except Exception:
+        _splash = None
+
+    def _splash_step(done, total, name):
+        """Live splash update — fill the loading bar, refresh the label."""
+        if _splash is None:
+            return
+        try:
+            _splash_lbl.config(
+                text=f"Installing: {name} ({done}/{total})\n"
+                     "Please wait — this runs once only…")
+            _splash_bar.config(value=round(done / total * 100, 1))
+            _splash.update()
+        except Exception:
+            pass
+
+    installer_bases = [
+        [sys.executable, "-m", "pip", "install", "--quiet"],
+        ["py", "-m", "pip", "install", "--quiet"],
+        ["python", "-m", "pip", "install", "--quiet"],
+        ["python3", "-m", "pip", "install", "--quiet"],
+        ["pip", "install", "--quiet"],
+        ["pip3", "install", "--quiet"],
+    ]
+    success = True
+    _total = len(missing)
+    for _i, _pkg in enumerate(missing):
+        _splash_step(_i, _total, _pkg)
+        _ok = False
+        for _base in installer_bases:
+            try:
+                _r = subprocess.run(_base + [_pkg], capture_output=True, timeout=240)
+                if _r.returncode == 0:
+                    _ok = True
+                    break
+            except Exception:
+                continue
+        if not _ok:
+            success = False
+            break
+        _splash_step(_i + 1, _total, _pkg)
+
+    if _splash:
+        try:
+            _splash_lbl.config(
+                text="All packages installed — starting the app…"
+                if success
+                else "Package install failed — showing details…")
+            if success:
+                _splash_bar.config(value=100)
+            _splash.update()
+            _splash.after(700 if success else 1200, _splash.destroy)
+            _splash.mainloop()
+        except Exception:
+            pass
+
+    if not success:
+        try:
+            import tkinter.messagebox as _mb
+            _r2 = _tk.Tk(); _r2.withdraw()
+            _mb.showerror(
+                "Install failed",
+                f"Could not auto-install: {', '.join(missing)}\n\n"
+                "Please run manually in a Command Prompt:\n\n"
+                f"    py -m pip install {' '.join(missing)}",
+            )
+            _r2.destroy()
+        except Exception:
+            pass
+    return success
+
+_bootstrap_packages([
+    ("selenium",   "selenium"),
+    ("pandas",     "pandas"),
+    ("openpyxl",   "openpyxl"),
+    ("pdfplumber", "pdfplumber"),
+    ("requests",   "requests"),
+    ("PIL",        "Pillow"),
+], "GFH Accessories Order History Scraper")
 
 import os
 import io
